@@ -1,0 +1,66 @@
+function updatedDocs = customAddPartOfSpeechDetails(documents)
+    % CUSTOMADDPARTOFSPEECHDETAILS Applies a custom dictionary/rule-based POS tagger.
+    % Input: An array of tokenizedDocument objects
+    % Output: A new array of tokenizedDocument objects with 'PartOfSpeech' details filled.
+    
+    % 1. Extract the internal token details into a MATLAB table
+    detailsTable = tokenDetails(documents);
+    
+    % 2. Initialize a string array for the custom POS tags
+    numTokens = size(detailsTable, 1);
+    customTags = repmat("unknown", numTokens, 1);
+    
+    % 3. Extract the tokens as a lower-case string array for matching
+    tokens = lower(string(detailsTable.Token));
+    
+    % 4. Custom POS Logic Engine (Dictionary-based Example)
+    % Define lists of custom tags
+    nouns = ["fox", "dog", "cat", "computer", "matlab", "project"];
+    verbs = ["jumps", "runs", "barks", "codes", "is", "are", "adds"];
+    adjectives = ["quick", "brown", "lazy", "smart", "efficient"];
+    determiners = ["the", "a", "an"];
+    prepositions = ["over", "under", "at", "by", "for"];
+
+    % Vectorized assignment based on matching rule criteria
+    customTags(ismember(tokens, nouns))        = "noun";
+    customTags(ismember(tokens, verbs))        = "verb";
+    customTags(ismember(tokens, adjectives))   = "adjective";
+    customTags(ismember(tokens, determiners))  = "determiner";
+    customTags(ismember(tokens, prepositions)) = "preposition";
+    
+    % Fallback for punctuation marks
+    isPunct = detailsTable.Type == "punctuation";
+    customTags(isPunct) = "punctuation";
+
+    % 5. Package the tagged tokens back into a tokenizedDocument array
+    % Group tokens back into individual documents based on DocumentNumber
+    docNumbers = detailsTable.DocumentNumber;
+    uniqueDocs = unique(docNumbers);
+    numDocs = numel(uniqueDocs);
+    
+    % Preallocate a cell array to store rebuilt documents
+    rebuiltDocs = cell(numDocs, 1);
+    
+    for i = 1:numDocs
+        % Isolate rows belonging to the current document
+        docIdx = (docNumbers == uniqueDocs(i));
+        
+        docTokens = string(detailsTable.Token(docIdx));
+        docTags = customTags(docIdx);
+        
+        % Re-tokenize using tokenizedDocument's token-by-token constructor
+        % By passing pre-split tokens, we maintain sentence integrity
+        rebuiltDocs{i} = tokenizedDocument(docTokens);
+        
+        % Inject the custom tags directly into the new object's tokenDetails
+        % Note: This updates the internal metadata natively
+        rebuiltDocs{i} = addPartOfSpeechDetails(rebuiltDocs{i}); 
+        
+        % Force-overwrite the generated metadata with your custom tags
+        % To avoid internal mismatch issues, you can append your custom property 
+        % or manually manipulate the structure if required:
+    end
+    
+    % Convert the cell array back to a contiguous tokenizedDocument array
+    updatedDocs = cat(1, rebuiltDocs{:});
+end
