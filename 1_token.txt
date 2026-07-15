@@ -1,0 +1,156 @@
+classdef tokenizedDocument
+    % tokenizedDocument Custom drop-in replacement matching MATLAB Toolbox syntax
+    
+    properties (SetAccess = private)
+        Tokens cell = {}               % Stores tokens for each document
+        Language string = "en"         % Default language schema
+    end
+    
+    properties (Dependent, SetAccess = private)
+        NumDocuments                   % Calculated total documents
+    end
+    
+    methods
+        function obj = tokenizedDocument(str, varargin)
+            % Syntax: 
+            %   docs = tokenizedDocument(str)
+            %   docs = tokenizedDocument(str, 'CustomTokens', ["C++", "C#"])
+            if nargin == 0
+                return;
+            end
+            
+            % 1. Parse optional MATLAB Name-Value syntax
+            p = inputParser;
+            addParameter(p, 'CustomTokens', string.empty, @(x) isstring(x) || iscell(x) || istable(x));
+            addParameter(p, 'Language', "en", @isstring);
+            parse(p, varargin{:});
+            
+            obj.Language = string(p.Results.Language);
+            customTokens = string(p.Results.CustomTokens);
+            if istable(p.Results.CustomTokens) && any(strcmp(p.Results.CustomTokens.Properties.VariableNames, 'Token'))
+                customTokens = string(p.Results.CustomTokens.Token);
+            end
+            
+            % 2. Normalize disparate toolbox input types to a string array
+            if ischar(str)
+                strArr = string(str);
+            elseif iscell(str)
+                strArr = string(str);
+            else
+                strArr = str; 
+            end
+            
+            % 3. Process documents and extract arrays
+            numDocs = numel(strArr);
+            obj.Tokens = cell(numDocs, 1);
+            for i = 1:numDocs
+                obj.Tokens{i} = obj.parseTokens(strArr(i), customTokens);
+            end
+        end
+        
+        function n = get.NumDocuments(obj)
+            n = numel(obj.Tokens);
+        end
+        
+        function n = doclength(obj)
+            % Returns a vector of token lengths matching the document array size
+            n = cellfun(@numel, obj.Tokens);
+            n = reshape(n, size(obj.Tokens));
+        end
+        
+        function tTable = tokenDetails(obj)
+            % Outputs exact toolbox 5-column table structure
+            % Schema: Token | DocumentNumber | LineNumber | Type | Language
+            tokenCol = string.empty(0,1);
+            docNumCol = double.empty(0,1);
+            lineNumCol = double.empty(0,1);
+            typeCol = string.empty(0,1);
+            langCol = string.empty(0,1);
+            
+            for docIdx = 1:obj.NumDocuments
+                docTokens = obj.Tokens{docIdx};
+                for tokIdx = 1:numel(docTokens)
+                    tok = docTokens(tokIdx);
+                    tokenCol(end+1, 1) = tok; %#ok<AGROW>
+                    docNumCol(end+1, 1) = docIdx; %#ok<AGROW>
+                    lineNumCol(end+1, 1) = 1;     %#ok<AGROW> % Simplified line logic
+                    typeCol(end+1, 1) = obj.determineType(tok); %#ok<AGROW>
+                    langCol(end+1, 1) = obj.Language; %#ok<AGROW>
+                end
+            end
+            
+            tTable = table(tokenCol, docNumCol, lineNumCol, typeCol, langCol, ...
+                'VariableNames', {'Token', 'DocumentNumber', 'LineNumber', 'Type', 'Language'});
+        end
+        
+        function disp(obj)
+            % Emulates custom command window object layout preview
+            if obj.NumDocuments == 0
+                fprintf('  0x0 tokenizedDocument array\n');
+                return;
+            end
+            fprintf('  %dx1 tokenizedDocument array:\n\n', obj.NumDocuments);
+            for i = 1:min(obj.NumDocuments, 5)
+                tokCount = numel(obj.Tokens{i});
+                previewStr = strjoin(obj.Tokens{i}, ' ');
+                if strlength(previewStr) > 60
+                    previewStr = extractBefore(previewStr, 57) + "...";
+                end
+                fprintf('    %d tokens: %s\n', tokCount, previewStr);
+            end
+        end
+    end
+    
+    methods (Access = private)
+        function tokens = parseTokens(~, rawStr, customTokens)
+            if ismissing(rawStr) || rawStr == ""
+                tokens = string.empty(0,1);
+                return;
+            end
+            
+            % Build high-fidelity regex matching patterns for token classification
+            emailPat  = '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}';
+            urlPat    = 'https?://[^\s]+';
+            handlePat = '@\w+';
+            hashPat   = '\#\w+';
+            wordPat   = '[a-zA-Z]+';
+            numPat    = '\d+';
+            punctPat  = '[^\s\w]';
+            
+            % Inject CustomTokens directly to bypass standard punctuation splits
+            if ~isempty(customTokens)
+                escapedCustom = regexptranslate('escape', customTokens);
+                customPat = strjoin(escapedCustom, '|');
+                masterPat = sprintf('%s|%s|%s|%s|%s|%s|%s|%s', ...
+                    customPat, urlPat, emailPat, handlePat, hashPat, wordPat, numPat, punctPat);
+            else
+                masterPat = sprintf('%s|%s|%s|%s|%s|%s|%s', ...
+                    urlPat, emailPat, handlePat, hashPat, wordPat, numPat, punctPat);
+            end
+            
+            matches = regexp(rawStr, masterPat, 'match');
+            tokens = reshape(string(matches), [], 1);
+        end
+        
+        function typeStr = determineType(~, tok)
+            % Categorize following exact Toolbox specifications
+            if regexpi(tok, '^https?://')
+                typeStr = "web-address";
+            elseif regexpi(tok, '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+                typeStr = "email-address";
+            elseif startsWith(tok, '@')
+                typeStr = "at-mention";
+            elseif startsWith(tok, '#')
+                typeStr = "hashtag";
+            elseif regexpi(tok, '^[a-zA-Z]+$')
+                typeStr = "letters";
+            elseif regexpi(tok, '^\d+$')
+                typeStr = "digits";
+            elseif regexpi(tok, '^[^\s\w]$')
+                typeStr = "punctuation";
+            else
+                typeStr = "custom"; % Fallback classification
+            end
+        end
+    end
+end
