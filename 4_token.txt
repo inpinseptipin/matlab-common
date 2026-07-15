@@ -1,0 +1,37 @@
+function updatedDocs = customErasePunctuation(documents)
+    % CUSTOMERASEPUNCTUATION Removes punctuation tokens from tokenized documents.
+    % Input:  An array of tokenizedDocument objects
+    % Output: A new array of tokenizedDocument objects without punctuation
+    
+    % 1. Extract internal token metadata into a table
+    detailsTable = tokenDetails(documents);
+    
+    % 2. Create a mask to filter out punctuation type tokens
+    % MATLAB natively flags punctuation tokens as "punctuation" in the Type column
+    keepMask = (detailsTable.Type ~= "punctuation");
+    
+    % 3. Filter the table to keep only non-punctuation tokens
+    cleanedTable = detailsTable(keepMask, :);
+    
+    % 4. Rebuild individual documents based on DocumentNumber
+    docNumbers = cleanedTable.DocumentNumber;
+    uniqueDocs = unique(docNumbers);
+    numDocs = numel(uniqueDocs);
+    
+    % Preallocate cell array for reconstruction speed
+    rebuiltDocs = cell(numDocs, 1);
+    
+    for i = 1:numDocs
+        % Isolate rows belonging to the current document ID
+        docIdx = (docNumbers == uniqueDocs(i));
+        
+        % Extract the text tokens for this specific document
+        docTokens = string(cleanedTable.Token(docIdx));
+        
+        % Reconstruct using tokenizedDocument's token-by-token constructor
+        rebuiltDocs{i} = tokenizedDocument(docTokens);
+    end
+    
+    % Convert cell array back to a contiguous tokenizedDocument array
+    updatedDocs = cat(1, rebuiltDocs{:});
+end

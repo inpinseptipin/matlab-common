@@ -1,0 +1,46 @@
+function updatedDocs = customRemoveStopWords(documents, customStopWords)
+    % CUSTOMREMOVESTOPWORDS Removes custom stop words from tokenized documents.
+    % Inputs: 
+    %   documents       - An array of tokenizedDocument objects
+    %   customStopWords - A string array of words to remove
+    % Output: 
+    %   updatedDocs     - A new array of cleaned tokenizedDocument objects
+    
+    % 1. Clean the input stop words list for accurate matching
+    customStopWords = lower(string(customStopWords));
+    
+    % 2. Extract internal token details into a MATLAB table
+    detailsTable = tokenDetails(documents);
+    
+    % 3. Extract tokens as lowercase strings to match case-insensitively
+    tokens = lower(string(detailsTable.Token));
+    
+    % 4. Create a logical mask of tokens to keep
+    % returns true if the token is NOT in the stop words list
+    keepMask = ~ismember(tokens, customStopWords);
+    
+    % 5. Filter the table to only keep valid tokens
+    cleanedTable = detailsTable(keepMask, :);
+    
+    % 6. Rebuild individual documents based on DocumentNumber
+    docNumbers = cleanedTable.DocumentNumber;
+    uniqueDocs = unique(docNumbers);
+    numDocs = numel(uniqueDocs);
+    
+    % Preallocate cell array for speed
+    rebuiltDocs = cell(numDocs, 1);
+    
+    for i = 1:numDocs
+        % Isolate rows belonging to the current document ID
+        docIdx = (docNumbers == uniqueDocs(i));
+        
+        % Extract the exact original tokens (maintains punctuation/casing)
+        docTokens = string(cleanedTable.Token(docIdx));
+        
+        % Re-tokenize from the pre-split token array
+        rebuiltDocs{i} = tokenizedDocument(docTokens);
+    end
+    
+    % Convert cell array back to a contiguous tokenizedDocument array
+    updatedDocs = cat(1, rebuiltDocs{:});
+end
