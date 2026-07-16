@@ -1,72 +1,82 @@
-classdef WordEncoder
-    properties
-        Vocabulary (1,:) string    % Array of unique words in the vocabulary
-        UnknownToken (1,1) string  % Token used for out-of-vocabulary words
-    end
+function encoding = customWordEncoding(documents, varargin)
+    % CUSTOMWORDENCODING Creates a text encoding object from document data.
+    %
+    % Syntax:
+    %   encoding = customWordEncoding(documents)
+    %   encoding = customWordEncoding(documents, 'UnknownToken', "<unk>", 'IgnoreCase', true)
     
-    properties (Access = private)
-        WordMap                     % containers.Map for O(1) word-to-index lookup
-    end
+    % 1. Parse optional inputs
+    p = inputParser;
+    addRequired(p, 'documents');
+    addParameter(p, 'UnknownToken', "<unknown>", @(x) isstring(x) || ischar(x));
+    addParameter(p, 'IgnoreCase', true, @islogical);
+    parse(p, documents, varargin{:});
     
-    methods
-        % Constructor: Fits vocabulary from cell/string array of text
-        function obj = WordEncoder(textData, unknownToken)
-            if nargin < 2
-                unknownToken = "<unknown>";
-            end
-            obj.UnknownToken = unknownToken;
-            
-            % Clean and extract all unique words
-            allWords = lower(extractWords(string(textData)));
-            uniqueWords = unique(allWords, 'stable'); % Keeps order of appearance
-            
-            % Ensure unknown token is at index 1
-            uniqueWords(uniqueWords == obj.UnknownToken) = [];
-            obj.Vocabulary = [obj.UnknownToken, uniqueWords];
-            
-            % Build the inverse lookup dictionary
-            indices = 1:numel(obj.Vocabulary);
-            obj.WordMap = containers.Map(obj.Vocabulary, indices);
-        end
-        
-        % Encodes a string array or a cell array of words into numeric indices
-        function indices = doc2sequence(obj, textData)
-            words = lower(extractWords(string(textData)));
-            indices = zeros(1, numel(words));
-            
-            for i = 1:numel(words)
-                w = words(i);
-                if isKey(obj.WordMap, w)
-                    indices(i) = obj.WordMap(w);
-                else
-                    indices(i) = obj.WordMap(obj.UnknownToken); % Map unknown words to 1
-                end
-            end
-        end
-        
-        % Decodes an array of numeric indices back into words
-        function words = sequence2doc(obj, indices)
-            words = repmat("", 1, numel(indices));
-            numWords = numel(obj.Vocabulary);
-            
-            for i = 1:numel(indices)
-                idx = indices(i);
-                if idx >= 1 && idx <= numWords
-                    words(i) = obj.Vocabulary(idx);
-                else
-                    words(i) = obj.UnknownToken;
-                end
-            end
+    unkToken = string(p.Results.UnknownToken);
+    ignoreCase = p.Results.IgnoreCase;
+
+    % 2. Tokenize text and extract unique vocabulary
+    allTokens = tokenizeText(documents, ignoreCase);
+    uniqueTokens = unique(allTokens, 'stable');
+    
+    % Ensure the unknown token sits cleanly at index 1
+    uniqueTokens(uniqueTokens == unkToken) = [];
+    vocabulary = [unkToken, uniqueTokens];
+    
+    % 3. Create key-value lookup containers
+    indices = 1:numel(vocabulary);
+    wordToIdxMap = containers.Map(vocabulary, indices);
+    idxToWordMap = containers.Map(indices, vocabulary);
+    
+    % 4. Build the structural encoding package
+    encoding = struct();
+    encoding.Vocabulary = vocabulary;
+    encoding.UnknownToken = unkToken;
+    encoding.NumWords = numel(vocabulary);
+    
+    % 5. Attach functional encoding handles
+    encoding.doc2sequence = @(docs) encodeDocs(docs, wordToIdxMap, unkToken, ignoreCase);
+    encoding.sequence2doc = @(seq) decodeSequence(seq, idxToWordMap, unkToken);
+end
+
+%% Helper: Document Tokenizer
+function tokens = tokenizeText(textData, ignoreCase)
+    combined = join(string(textData), " ");
+    if ignoreCase
+        combined = lower(combined);
+    end
+    % Strip common punctuation marks
+    cleaned = regexprep(combined, '[.,!?;:()\[\]"''\-\\]', ' ');
+    % Split words by whitespace boundaries
+    tokens = split(normalizeSpace(cleaned));
+    tokens = tokens(tokens ~= "")';
+end
+
+%% Helper: Word to Numeric Index Encoder
+function sequence = encodeDocs(textData, mapObj, unkToken, ignoreCase)
+    tokens = tokenizeText(textData, ignoreCase);
+    sequence = zeros(1, numel(tokens));
+    unkIdx = mapObj(unkToken);
+    
+    for i = 1:numel(tokens)
+        token = tokens(i);
+        if isKey(mapObj, token)
+            sequence(i) = mapObj(token);
+        else
+            sequence(i) = unkIdx;
         end
     end
 end
 
-% Helper function to tokenize clean strings without toolbox dependencies
-function words = extractWords(strText)
-    % Join array elements, remove punctuation, force spaces, and split
-    combined = join(strText, " ");
-    cleaned = regexprep(combined, '[^\w\s]', '');
-    words = split(normalizeSpace(cleaned));
-    words = words(words ~= "");
-    words = words';
+%% Helper: Numeric Index to Word Decoder
+function tokens = decodeSequence(sequence, mapObj, unkToken)
+    tokens = repmat("", 1, numel(sequence));
+    for i = 1:numel(sequence)
+        idx = sequence(i);
+        if isKey(mapObj, idx)
+            tokens(i) = mapObj(idx);
+        else
+            tokens(i) = unkToken;
+        end
+    end
 end
