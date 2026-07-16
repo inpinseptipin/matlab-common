@@ -1,0 +1,60 @@
+function sequences = customDoc2Sequence(vocab, textData, varargin)
+    % CUSTOMDOC2SEQUENCE Converts documents into numeric index sequences.
+    %
+    % Syntax:
+    %   sequences = customDoc2Sequence(vocab, textData)
+    %   sequences = customDoc2Sequence(vocab, textData, 'UnknownToken', "<unk>")
+    
+    % 1. Parse optional arguments
+    p = inputParser;
+    addRequired(p, 'vocab');
+    addRequired(p, 'textData');
+    addParameter(p, 'UnknownToken', "<unknown>", @(x) isstring(x) || ischar(x));
+    parse(p, vocab, textData, varargin{:});
+    
+    unkToken = string(p.Results.UnknownToken);
+    vocabList = string(p.Results.vocab);
+
+    % 2. Build a fast O(1) lookup map from the vocabulary array
+    % Ensure the unknown token is accounted for
+    if ~any(vocabList == unkToken)
+        vocabList = [unkToken, vocabList];
+    end
+    indices = 1:numel(vocabList);
+    wordMap = containers.Map(vocabList, indices);
+    unkIdx = wordMap(unkToken);
+
+    % 3. Process inputs (handles a single string, string arrays, or cell arrays)
+    documents = string(textData);
+    sequences = cell(size(documents)); % Use cell array to hold variable-length sequences
+
+    for d = 1:numel(documents)
+        % Tokenize individual document
+        tokens = tokenizeString(documents(d));
+        
+        % Map tokens to numeric indices
+        docSeq = zeros(1, numel(tokens));
+        for t = 1:numel(tokens)
+            token = tokens(t);
+            if isKey(wordMap, token)
+                docSeq(t) = wordMap(token);
+            else
+                docSeq(t) = unkIdx; % Out-of-vocabulary fallback
+            end
+        end
+        sequences{d} = docSeq;
+    end
+    
+    % If the input was just a single document string, unbox it from the cell array
+    if isscalar(documents)
+        sequences = sequences{1};
+    end
+end
+
+%% Helper: Basic tokenizer to split text and strip punctuation
+function tokens = tokenizeString(str)
+    cleaned = lower(string(str));
+    cleaned = regexprep(cleaned, '[.,!?;:()\[\]"''\-\\]', ' '); % Remove punctuation
+    tokens = split(normalizeSpace(cleaned));
+    tokens = tokens(tokens ~= "")'; % Filter out empty artifacts
+end
