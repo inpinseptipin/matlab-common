@@ -1,0 +1,72 @@
+classdef WordEncoder
+    properties
+        Vocabulary (1,:) string    % Array of unique words in the vocabulary
+        UnknownToken (1,1) string  % Token used for out-of-vocabulary words
+    end
+    
+    properties (Access = private)
+        WordMap                     % containers.Map for O(1) word-to-index lookup
+    end
+    
+    methods
+        % Constructor: Fits vocabulary from cell/string array of text
+        function obj = WordEncoder(textData, unknownToken)
+            if nargin < 2
+                unknownToken = "<unknown>";
+            end
+            obj.UnknownToken = unknownToken;
+            
+            % Clean and extract all unique words
+            allWords = lower(extractWords(string(textData)));
+            uniqueWords = unique(allWords, 'stable'); % Keeps order of appearance
+            
+            % Ensure unknown token is at index 1
+            uniqueWords(uniqueWords == obj.UnknownToken) = [];
+            obj.Vocabulary = [obj.UnknownToken, uniqueWords];
+            
+            % Build the inverse lookup dictionary
+            indices = 1:numel(obj.Vocabulary);
+            obj.WordMap = containers.Map(obj.Vocabulary, indices);
+        end
+        
+        % Encodes a string array or a cell array of words into numeric indices
+        function indices = doc2sequence(obj, textData)
+            words = lower(extractWords(string(textData)));
+            indices = zeros(1, numel(words));
+            
+            for i = 1:numel(words)
+                w = words(i);
+                if isKey(obj.WordMap, w)
+                    indices(i) = obj.WordMap(w);
+                else
+                    indices(i) = obj.WordMap(obj.UnknownToken); % Map unknown words to 1
+                end
+            end
+        end
+        
+        % Decodes an array of numeric indices back into words
+        function words = sequence2doc(obj, indices)
+            words = repmat("", 1, numel(indices));
+            numWords = numel(obj.Vocabulary);
+            
+            for i = 1:numel(indices)
+                idx = indices(i);
+                if idx >= 1 && idx <= numWords
+                    words(i) = obj.Vocabulary(idx);
+                else
+                    words(i) = obj.UnknownToken;
+                end
+            end
+        end
+    end
+end
+
+% Helper function to tokenize clean strings without toolbox dependencies
+function words = extractWords(strText)
+    % Join array elements, remove punctuation, force spaces, and split
+    combined = join(strText, " ");
+    cleaned = regexprep(combined, '[^\w\s]', '');
+    words = split(normalizeSpace(cleaned));
+    words = words(words ~= "");
+    words = words';
+end
