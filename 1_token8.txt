@@ -1,0 +1,58 @@
+function documents = customSequence2Doc(vocab, sequences, varargin)
+    % CUSTOMSEQUENCE2DOC Converts numeric index sequences back to documents.
+    %
+    % Syntax:
+    %   documents = customSequence2Doc(vocab, sequences)
+    %   documents = customSequence2Doc(vocab, sequences, 'UnknownToken', "<unk>")
+    
+    % 1. Parse configuration inputs
+    p = inputParser;
+    addRequired(p, 'vocab');
+    addRequired(p, 'sequences');
+    addParameter(p, 'UnknownToken', "<unknown>", @(x) isstring(x) || ischar(x));
+    parse(p, vocab, sequences, varargin{:});
+    
+    unkToken = string(p.Results.UnknownToken);
+    vocabList = string(p.Results.vocab);
+
+    % 2. Enforce standard vocabulary constraints
+    if ~any(vocabList == unkToken)
+        vocabList = [unkToken, vocabList];
+    end
+    numWords = numel(vocabList);
+
+    % 3. Standardize input format into a cell array for uniform processing
+    isInputCell = iscell(sequences);
+    if ~isInputCell
+        workingSequences = {sequences};
+    end
+
+    % 4. Build inverted fast-lookup index table
+    indices = 1:numWords;
+    idxMap = containers.Map(indices, vocabList);
+
+    % 5. Decode numeric arrays back into text strings
+    decodedDocs = repmat("", size(workingSequences));
+    for d = 1:numel(workingSequences)
+        seq = workingSequences{d};
+        docWords = repmat("", 1, numel(seq));
+        
+        for t = 1:numel(seq)
+            idx = seq(t);
+            if isKey(idxMap, idx)
+                docWords(t) = idxMap(idx);
+            else
+                docWords(t) = unkToken; % Fallback for out-of-bounds indices
+            end
+        end
+        % Reconstruct individual document string
+        decodedDocs(d) = join(docWords, " ");
+    end
+
+    % 6. Match original input matrix structural type
+    if ~isInputCell
+        documents = decodedDocs(1);
+    else
+        documents = cellstr(decodedDocs); % Convert to standard cell formatting
+    end
+end
